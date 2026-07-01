@@ -1,17 +1,17 @@
-use iced::widget::{button, column, container, horizontal_rule, row, scrollable, text, text_input, Column};
-use iced::{Alignment, Application, Command, Element, Length, Settings, Theme};
+use iced::widget::{button, column, container, horizontal_rule, row, scrollable, text, Column};
+use iced::{Alignment, Element, Length, Task, Theme};
 use serde::{Deserialize, Serialize};
 use std::process::Command as SysCommand;
 
 fn main() -> iced::Result {
     tracing_subscriber::fmt::init();
-    TunaInstaller::run(Settings {
-        window: iced::window::Settings {
+    iced::application("TunaOS Installer", TunaInstaller::update, TunaInstaller::view)
+        .window(iced::window::Settings {
             size: iced::Size::new(800.0, 600.0),
             ..Default::default()
-        },
-        ..Default::default()
-    })
+        })
+        .theme(|_| Theme::Dark)
+        .run_with(TunaInstaller::new)
 }
 
 #[derive(Debug, Clone)]
@@ -24,6 +24,7 @@ enum Page {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct Recipe {
     disk: String,
     filesystem: String,
@@ -82,6 +83,7 @@ enum Message {
     NextPage,
     BackPage,
     SelectDisk(usize),
+    DisksScanned(Result<Vec<DiskInfo>, String>),
     HostnameChanged(String),
     StartInstall,
     InstallOutput(String),
@@ -98,14 +100,9 @@ struct TunaInstaller {
     install_ok: bool,
 }
 
-impl Application for TunaInstaller {
-    type Executor = iced::executor::Default;
-    type Message = Message;
-    type Theme = Theme;
-    type Flags = ();
-
-    fn new(_flags: ()) -> (Self, Command<Message>) {
-        let mut app = Self {
+impl TunaInstaller {
+    fn new() -> (Self, Task<Message>) {
+        let app = Self {
             page: Page::Welcome,
             recipe: Recipe::default(),
             disks: Vec::new(),
@@ -113,16 +110,11 @@ impl Application for TunaInstaller {
             install_log: String::new(),
             install_ok: false,
         };
-        // Scan disks in background
-        let cmd = Command::perform(Self::scan_disks(), Message::SelectDisk);
-        (app, cmd)
+        let task = Task::perform(Self::scan_disks(), Message::DisksScanned);
+        (app, task)
     }
 
-    fn title(&self) -> String {
-        "TunaOS Installer".into()
-    }
-
-    fn update(&mut self, message: Message) -> Command<Message> {
+    fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::NextPage => {
                 self.page = match self.page {
@@ -130,40 +122,52 @@ impl Application for TunaInstaller {
                     Page::DiskSelect => Page::Confirm,
                     Page::Confirm => Page::Installing,
                     Page::Installing => Page::Done,
-                    Page::Done => return Command::none(),
+                    Page::Done => return Task::none(),
                 };
                 if matches!(self.page, Page::DiskSelect) {
-                    return Command::perform(Self::scan_disks(), Message::SelectDisk);
+                    return Task::perform(Self::scan_disks(), Message::DisksScanned);
                 }
-                Command::none()
+                Task::none()
             }
             Message::BackPage => {
                 self.page = match self.page {
                     Page::Confirm => Page::DiskSelect,
                     _ => Page::Welcome,
                 };
-                Command::none()
+                Task::none()
             }
             Message::SelectDisk(idx) => {
                 if idx < self.disks.len() {
                     self.selected_disk = Some(idx);
                     self.recipe.disk = format!("/dev/{}", self.disks[idx].name);
                 }
-                Command::none()
+                Task::none()
+            }
+            Message::DisksScanned(Ok(disks)) => {
+                self.disks = disks;
+                if !self.disks.is_empty() {
+                    self.selected_disk = Some(0);
+                    self.recipe.disk = format!("/dev/{}", self.disks[0].name);
+                }
+                Task::none()
+            }
+            Message::DisksScanned(Err(err)) => {
+                self.install_log.push_str(&format!("Disk scan error: {err}\n"));
+                Task::none()
             }
             Message::HostnameChanged(h) => {
                 self.recipe.hostname = h;
-                Command::none()
+                Task::none()
             }
             Message::StartInstall => {
                 self.page = Page::Installing;
                 let recipe = self.recipe.clone();
-                Command::perform(Self::run_fisherman(recipe), Message::InstallFinished)
+                Task::perform(Self::run_fisherman(recipe), Message::InstallFinished)
             }
             Message::InstallOutput(line) => {
                 self.install_log.push_str(&line);
                 self.install_log.push('\n');
-                Command::none()
+                Task::none()
             }
             Message::InstallFinished(result) => {
                 self.page = Page::Done;
@@ -179,7 +183,7 @@ impl Application for TunaInstaller {
                         self.install_log.push_str(&format!("\n=== Error: {e} ===\n"));
                     }
                 }
-                Command::none()
+                Task::none()
             }
             Message::Quit => {
                 std::process::exit(if self.install_ok { 0 } else { 1 });
@@ -202,10 +206,6 @@ impl Application for TunaInstaller {
             .padding(40)
             .into()
     }
-
-    fn theme(&self) -> Theme {
-        Theme::Dark
-    }
 }
 
 // ---- Pages ----
@@ -220,7 +220,7 @@ impl TunaInstaller {
             button("Get Started").on_press(Message::NextPage),
         ]
         .spacing(16)
-        .align_items(Alignment::Center)
+        .align_x(Alignment::Center)
         .width(Length::Fill)
         .into()
     }
@@ -232,16 +232,16 @@ impl TunaInstaller {
             .push(text("All data on the selected disk will be erased.").size(14));
 
         if self.disks.is_empty() {
-            col = col.push(text("Scanning disks...").size(16).style(iced::Color::from_rgb(0.5, 0.5, 0.5)));
+            col = col.push(text("Scanning disks...").size(16).color(iced::Color::from_rgb(0.5, 0.5, 0.5)));
         } else {
             for (i, disk) in self.disks.iter().enumerate() {
                 let label = format!(
                     "/dev/{}  ({}  {}) [{}]",
                     disk.name, disk.size, disk.model, disk.transport
                 );
-                let mut btn = button(&label).width(Length::Fill);
+                let mut btn = button(text(label)).width(Length::Fill);
                 if self.selected_disk == Some(i) {
-                    btn = btn.style(iced::theme::Button::Primary);
+                    btn = btn.style(button::primary);
                 } else {
                     btn = btn.on_press(Message::SelectDisk(i));
                 }
@@ -249,14 +249,14 @@ impl TunaInstaller {
             }
         }
 
-        col.push(horizontal_rule(8));
-        col.push(
+        col = col.push(horizontal_rule(8));
+        col = col.push(
             row![
                 button("Back").on_press(Message::BackPage),
                 iced::widget::Space::with_width(Length::Fill),
                 button("Continue")
                     .on_press(Message::NextPage)
-                    .style(iced::theme::Button::Primary),
+                    .style(button::primary),
             ]
             .spacing(12),
         );
@@ -265,10 +265,11 @@ impl TunaInstaller {
     }
 
     fn view_confirm(&self) -> Element<Message> {
+        let disk_name = self.selected_disk.and_then(|idx| self.disks.get(idx)).map(|d| d.name.as_str()).unwrap_or("?");
         let col = column![
             text("Confirm Installation").size(24),
             horizontal_rule(8),
-            text(format!("Target Disk:  /dev/{}", self.disks.get(self.selected_disk.unwrap_or(0)).map(|d| &d.name).unwrap_or(&"?"))),
+            text(format!("Target Disk:  /dev/{}", disk_name)),
             text(format!("Filesystem:   {}", self.recipe.filesystem)),
             text(format!("Encryption:   {}", self.recipe.encryption.enc_type)),
             text(format!("Hostname:     {}", self.recipe.hostname)),
@@ -280,7 +281,7 @@ impl TunaInstaller {
                 iced::widget::Space::with_width(Length::Fill),
                 button("Install")
                     .on_press(Message::StartInstall)
-                    .style(iced::theme::Button::Primary),
+                    .style(button::primary),
             ]
             .spacing(12),
         ]
@@ -310,7 +311,7 @@ impl TunaInstaller {
             ("✗", "Installation Failed", "Check the installation log for details.", [0.9, 0.4, 0.0])
         };
 
-        let status = text(title).size(28).style(iced::Color::from_rgb(color[0], color[1], color[2]));
+        let status = text(title).size(28).color(iced::Color::from_rgb(color[0], color[1], color[2]));
 
         column![
             text(icon).size(48),
@@ -320,7 +321,7 @@ impl TunaInstaller {
             button("Close").on_press(Message::Quit),
         ]
         .spacing(16)
-        .align_items(Alignment::Center)
+        .align_x(Alignment::Center)
         .width(Length::Fill)
         .into()
     }
@@ -329,9 +330,36 @@ impl TunaInstaller {
 // ---- Async helpers ----
 
 impl TunaInstaller {
-    async fn scan_disks() -> Message {
-        // Not using the return directly — this is a one-shot
-        Message::SelectDisk(0)
+    async fn scan_disks() -> Result<Vec<DiskInfo>, String> {
+        let output = tokio::task::spawn_blocking(|| {
+            SysCommand::new("lsblk")
+                .args(&["-J", "-o", "NAME,SIZE,TYPE,MODEL,TRAN"])
+                .output()
+                .map_err(|e| format!("Failed to run lsblk: {e}"))
+        })
+        .await
+        .map_err(|e| format!("Task join error: {e}"))??;
+
+        if !output.status.success() {
+            return Err(String::from_utf8_lossy(&output.stderr).into_owned());
+        }
+
+        let val: serde_json::Value = serde_json::from_slice(&output.stdout)
+            .map_err(|e| format!("Failed to parse lsblk JSON: {e}"))?;
+
+        let mut disks = Vec::new();
+        if let Some(devices) = val.get("blockdevices").and_then(|d| d.as_array()) {
+            for dev in devices {
+                if dev.get("type").and_then(|t| t.as_str()) == Some("disk") {
+                    let name = dev.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
+                    let size = dev.get("size").and_then(|s| s.as_str()).unwrap_or("").to_string();
+                    let model = dev.get("model").and_then(|m| m.as_str()).unwrap_or("").to_string();
+                    let transport = dev.get("tran").and_then(|t| t.as_str()).unwrap_or("").to_string();
+                    disks.push(DiskInfo { name, size, model, transport });
+                }
+            }
+        }
+        Ok(disks)
     }
 
     async fn run_fisherman(recipe: Recipe) -> Result<i32, String> {
