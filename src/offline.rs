@@ -10,9 +10,18 @@ pub fn in_flatpak() -> bool {
 }
 
 /// Program + leading args that run fisherman with privileges.
+///
+/// Flatpak runtimes ship no pkexec; escalate host-side. The live ISO
+/// symlinks the flatpak-bundled fisherman to /usr/local/bin and installs
+/// the polkit policy for it (tunaOS customize-live.sh).
 pub fn fisherman_command() -> Vec<String> {
     if in_flatpak() {
-        vec!["pkexec".into(), "/app/bin/fisherman".into()]
+        vec![
+            "flatpak-spawn".into(),
+            "--host".into(),
+            "pkexec".into(),
+            "/usr/local/bin/fisherman".into(),
+        ]
     } else {
         vec!["sudo".into(), "/usr/local/bin/fisherman".into()]
     }
