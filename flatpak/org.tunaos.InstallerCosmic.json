@@ -1,0 +1,71 @@
+{
+  "app-id": "org.tunaos.InstallerCosmic",
+  "runtime": "org.freedesktop.Platform",
+  "runtime-version": "24.08",
+  "sdk": "org.freedesktop.Sdk",
+  "sdk-extensions": ["org.freedesktop.Sdk.Extension.rust-stable"],
+  "command": "tuna-installer-cosmic",
+  "finish-args": [
+    "--share=network",
+    "--share=ipc",
+    "--socket=wayland",
+    "--socket=fallback-x11",
+    "--device=all",
+    "--filesystem=host",
+    "--talk-name=org.freedesktop.Flatpak",
+    "--system-talk-name=org.freedesktop.PolicyKit1"
+  ],
+  "build-options": {
+    "append-path": "/usr/lib/sdk/rust-stable/bin",
+    "env": {
+      "CARGO_HOME": "/run/build/tuna-installer-cosmic/cargo",
+      "GOPATH": "/run/build/go-path",
+      "GOCACHE": "/run/build/go-cache",
+      "GOPROXY": "off"
+    }
+  },
+  "modules": [
+    {
+      "name": "go",
+      "buildsystem": "simple",
+      "build-commands": ["cp -r go /app/go"],
+      "sources": [
+        {
+          "type": "archive",
+          "url": "https://go.dev/dl/go1.26.1.linux-amd64.tar.gz",
+          "sha256": "031f088e5d955bab8657ede27ad4e3bc5b7c1ba281f05f245bcc304f327c987a",
+          "strip-components": 0
+        }
+      ]
+    },
+    {
+      "name": "fisherman",
+      "buildsystem": "simple",
+      "build-commands": [
+        "PATH=/app/go/bin:$PATH go build -C fisherman -o /app/bin/fisherman ./cmd/fisherman",
+        "install -Dm644 data/images.json /app/share/fisherman/data/images.json",
+        "cp -r data/images /app/share/fisherman/data/images",
+        "install -Dm644 data/polkit/org.tunaos.Installer.policy /app/share/polkit-1/actions/org.tunaos.Installer.policy"
+      ],
+      "sources": [
+        {
+          "type": "git",
+          "url": "https://github.com/projectbluefin/fisherman.git",
+          "branch": "dev"
+        }
+      ]
+    },
+    {
+      "name": "tuna-installer-cosmic",
+      "buildsystem": "simple",
+      "build-commands": [
+        "cargo --offline build --release",
+        "install -Dm755 target/release/tuna-installer-cosmic /app/bin/tuna-installer-cosmic"
+      ],
+      "sources": [
+        { "type": "dir", "path": ".." },
+        "cargo-sources.json"
+      ]
+    }
+  ]
+}

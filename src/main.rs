@@ -1,3 +1,5 @@
+mod offline;
+
 use iced::widget::{button, column, container, horizontal_rule, row, scrollable, text, Column};
 use iced::{Alignment, Element, Length, Task, Theme};
 use serde::{Deserialize, Serialize};
@@ -31,9 +33,22 @@ struct Recipe {
     #[serde(default)]
     btrfs_subvolumes: bool,
     encryption: Encryption,
+    /// Empty in live-ISO mode: bootc installs the running container.
+    #[serde(skip_serializing_if = "String::is_empty")]
     image: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     target_imgref: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    bootloader: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    compose_fs_backend: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    flatpaks: Vec<String>,
+    /// Embedded OCI stores for offline installs (spec §4B).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    additional_image_stores: Vec<String>,
+    #[serde(rename = "distroID")]
+    distro_id: String,
     #[serde(default = "default_selinux")]
     selinux_disabled: bool,
     hostname: String,
@@ -64,6 +79,11 @@ impl Default for Recipe {
             encryption: Encryption::default(),
             image: "ghcr.io/tuna-os/albacore:gnome".into(),
             target_imgref: String::new(),
+            bootloader: String::new(),
+            compose_fs_backend: false,
+            flatpaks: Vec::new(),
+            additional_image_stores: Vec::new(),
+            distro_id: "tunaos".into(),
             selinux_disabled: true,
             hostname: "tunaos".into(),
         }
@@ -93,6 +113,7 @@ enum Message {
 
 struct TunaInstaller {
     page: Page,
+    live_image: Option<String>,
     recipe: Recipe,
     disks: Vec<DiskInfo>,
     selected_disk: Option<usize>,
@@ -102,9 +123,19 @@ struct TunaInstaller {
 
 impl TunaInstaller {
     fn new() -> (Self, Task<Message>) {
+        let mut recipe = Recipe::default();
+        // Offline install support (spec §4): live-ISO mode installs the
+        // running container (empty image); embedded stores are always passed.
+        let live = offline::live_iso_image();
+        if live.is_some() {
+            recipe.image = String::new();
+        }
+        recipe.additional_image_stores = offline::offline_stores();
+
         let app = Self {
             page: Page::Welcome,
-            recipe: Recipe::default(),
+            live_image: live,
+            recipe,
             disks: Vec::new(),
             selected_disk: None,
             install_log: String::new(),
@@ -273,7 +304,10 @@ impl TunaInstaller {
             text(format!("Filesystem:   {}", self.recipe.filesystem)),
             text(format!("Encryption:   {}", self.recipe.encryption.enc_type)),
             text(format!("Hostname:     {}", self.recipe.hostname)),
-            text(format!("Image:        {}", self.recipe.image)),
+            text(match (&self.live_image, self.recipe.image.is_empty()) {
+                (Some(live), true) => format!("Image:        {live} (this system, no download)"),
+                _ => format!("Image:        {}", self.recipe.image),
+            }),
             horizontal_rule(8),
             text("All data on the target disk will be erased during installation.").size(14),
             row![
@@ -364,18 +398,25 @@ impl TunaInstaller {
 
     async fn run_fisherman(recipe: Recipe) -> Result<i32, String> {
         let json = serde_json::to_string_pretty(&recipe).map_err(|e| e.to_string())?;
-        let tmp = std::env::temp_dir().join("fisherman-recipe.json");
-        tokio::fs::write(&tmp, &json).await.map_err(|e| e.to_string())?;
+        // 0600 under XDG_RUNTIME_DIR — the recipe may hold a passphrase.
+        let path = offline::write_recipe(&json).map_err(|e| e.to_string())?;
 
-        let output = tokio::task::spawn_blocking(move || {
-            SysCommand::new("fisherman")
-                .arg(&tmp)
-                .output()
-                .map_err(|e| format!("Failed to run fisherman: {e}"))
+        let output = tokio::task::spawn_blocking({
+            let path = path.clone();
+            move || {
+                // pkexec /app/bin/fisherman in Flatpak, sudo otherwise.
+                let cmd = offline::fisherman_command();
+                SysCommand::new(&cmd[0])
+                    .args(&cmd[1..])
+                    .arg(&path)
+                    .output()
+                    .map_err(|e| format!("Failed to run fisherman: {e}"))
+            }
         })
         .await
         .map_err(|e| format!("Task join error: {e}"))??;
 
+        let _ = std::fs::remove_file(&path);
         Ok(output.status.code().unwrap_or(-1))
     }
 }

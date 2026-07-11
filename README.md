@@ -28,3 +28,24 @@ Produces the same JSON recipe as the Qt/KDE installer.
 ## License
 
 GPL-3.0-only
+
+## Flatpak
+
+```bash
+# One-time: generate offline cargo sources for flatpak-builder
+pip install aiohttp toml && python3 flatpak-cargo-generator.py Cargo.lock -o flatpak/cargo-sources.json
+
+flatpak-builder --user --install --force-clean build flatpak/org.tunaos.InstallerCosmic.json
+flatpak run org.tunaos.InstallerCosmic
+```
+
+`flatpak-cargo-generator.py` comes from
+https://github.com/flatpak/flatpak-builder-tools/tree/master/cargo
+
+## Offline installs
+
+On a TunaOS live ISO the installer detects the booted bootc image
+(`bootc status`) and installs it without a download (empty `image` in the
+recipe). Embedded OCI stores listed in `/etc/tuna-installer/offline-stores`
+(or `$TUNA_OFFLINE_STORES`, default `/usr/share/tuna-installer/oci-store`)
+are passed to fisherman as `additionalImageStores`.
