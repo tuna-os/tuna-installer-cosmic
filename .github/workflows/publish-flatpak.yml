@@ -70,5 +70,6 @@ jobs:
             echo "No index changes"
           else
             git commit -m "chore(flatpak): update tuna-installer-cosmic OCI index"
+            git pull --rebase origin main
             git push origin main
           fi
