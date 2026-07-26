@@ -1,7 +1,8 @@
 mod offline;
+mod theme;
 
-use iced::widget::{button, column, container, horizontal_rule, row, scrollable, text, Column};
-use iced::{Alignment, Element, Length, Task, Theme};
+use iced::widget::{button, column, container, row, scrollable, text, Column};
+use iced::{Alignment, Element, Length, Task};
 use serde::{Deserialize, Serialize};
 use std::process::Command as SysCommand;
 
@@ -12,7 +13,8 @@ fn main() -> iced::Result {
             size: iced::Size::new(800.0, 600.0),
             ..Default::default()
         })
-        .theme(|_| Theme::Dark)
+        .default_font(theme::UI_FONT)
+        .theme(|_| theme::theme())
         .run_with(TunaInstaller::new)
 }
 
@@ -231,11 +233,18 @@ impl TunaInstaller {
             Page::Done => self.view_done(),
         };
 
-        container(content)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .padding(40)
-            .into()
+        // DESIGN.md: single centered column, max 760 px. Iced has no
+        // max-width, so centre a width-capped container inside a filling one.
+        container(
+            container(content)
+                .width(Length::Fixed(theme::CONTENT_MAX_WIDTH))
+                .height(Length::Fill),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .center_x(Length::Fill)
+        .padding(theme::SPACE_L)
+        .into()
     }
 }
 
@@ -243,53 +252,69 @@ impl TunaInstaller {
 
 impl TunaInstaller {
     fn view_welcome(&self) -> Element<Message> {
+        // DESIGN.md copy register: sentence case, short, factual.
         column![
-            text("TunaOS Installer").size(32),
-            text("This wizard will guide you through installing TunaOS onto your computer.").size(16),
-            text("You'll select a target disk, configure options, and the installer will do the rest.").size(14),
-            horizontal_rule(8),
-            button("Get Started").on_press(Message::NextPage),
+            text("Install TunaOS").size(theme::TITLE),
+            text("This wizard will guide you through installing TunaOS onto your computer.")
+                .size(theme::BODY),
+            text("You'll select a target disk, configure options, and the installer will do the rest.")
+                .size(theme::BODY)
+                .color(theme::TEXT_DIM),
+            button("Continue")
+                .on_press(Message::NextPage)
+                .style(theme::button_primary),
         ]
-        .spacing(16)
-        .align_x(Alignment::Center)
+        .spacing(theme::SPACE_M)
         .width(Length::Fill)
         .into()
     }
 
     fn view_disk_select(&self) -> Element<Message> {
         let mut col = Column::new()
-            .spacing(12)
-            .push(text("Select Target Disk").size(24))
-            .push(text("All data on the selected disk will be erased.").size(14));
+            .spacing(theme::SPACE_S)
+            .push(text("Select a target disk").size(theme::TITLE))
+            .push(
+                text("Everything on this disk will be erased.")
+                    .size(theme::BODY)
+                    .color(theme::TEXT_DIM),
+            );
 
         if self.disks.is_empty() {
-            col = col.push(text("Scanning disks...").size(16).color(iced::Color::from_rgb(0.5, 0.5, 0.5)));
+            col = col.push(
+                text("Scanning disks…")
+                    .size(theme::BODY)
+                    .color(theme::TEXT_DIM),
+            );
         } else {
             for (i, disk) in self.disks.iter().enumerate() {
                 let label = format!(
                     "/dev/{}  ({}  {}) [{}]",
                     disk.name, disk.size, disk.model, disk.transport
                 );
-                let mut btn = button(text(label)).width(Length::Fill);
+                // Device names are mono per DESIGN.md ("Fira Mono for device
+                // names, refs, log output").
+                let mut btn = button(text(label).font(theme::MONO_FONT).size(theme::BODY))
+                    .width(Length::Fill);
                 if self.selected_disk == Some(i) {
-                    btn = btn.style(button::primary);
+                    btn = btn.style(theme::button_primary);
                 } else {
-                    btn = btn.on_press(Message::SelectDisk(i));
+                    btn = btn.style(theme::button_secondary).on_press(Message::SelectDisk(i));
                 }
                 col = col.push(btn);
             }
         }
 
-        col = col.push(horizontal_rule(8));
         col = col.push(
             row![
-                button("Back").on_press(Message::BackPage),
+                button("Back")
+                    .on_press(Message::BackPage)
+                    .style(theme::button_secondary),
                 iced::widget::Space::with_width(Length::Fill),
                 button("Continue")
                     .on_press(Message::NextPage)
-                    .style(button::primary),
+                    .style(theme::button_primary),
             ]
-            .spacing(12),
+            .spacing(theme::SPACE_S),
         );
 
         col.into()
@@ -298,8 +323,7 @@ impl TunaInstaller {
     fn view_confirm(&self) -> Element<Message> {
         let disk_name = self.selected_disk.and_then(|idx| self.disks.get(idx)).map(|d| d.name.as_str()).unwrap_or("?");
         let col = column![
-            text("Confirm Installation").size(24),
-            horizontal_rule(8),
+            text("Confirm installation").size(theme::TITLE),
             text(format!("Target Disk:  /dev/{}", disk_name)),
             text(format!("Filesystem:   {}", self.recipe.filesystem)),
             text(format!("Encryption:   {}", self.recipe.encryption.enc_type)),
@@ -307,54 +331,59 @@ impl TunaInstaller {
             text(match (&self.live_image, self.recipe.image.is_empty()) {
                 (Some(live), true) => format!("Image:        {live} (this system, no download)"),
                 _ => format!("Image:        {}", self.recipe.image),
-            }),
-            horizontal_rule(8),
-            text("All data on the target disk will be erased during installation.").size(14),
+            })
+            .font(theme::MONO_FONT)
+            .size(theme::BODY),
+            // --catch marks the destructive path, per DESIGN.md.
+            text("Everything on this disk will be erased.")
+                .size(theme::BODY)
+                .color(theme::CATCH),
             row![
-                button("Back").on_press(Message::BackPage),
+                button("Back")
+                    .on_press(Message::BackPage)
+                    .style(theme::button_secondary),
                 iced::widget::Space::with_width(Length::Fill),
                 button("Install")
                     .on_press(Message::StartInstall)
-                    .style(button::primary),
+                    .style(theme::button_destructive),
             ]
-            .spacing(12),
+            .spacing(theme::SPACE_S),
         ]
-        .spacing(12);
+        .spacing(theme::SPACE_S);
 
         scrollable(col).into()
     }
 
     fn view_installing(&self) -> Element<Message> {
         column![
-            text("Installing...").size(24),
+            text("Installing…").size(theme::TITLE),
             scrollable(
                 text(&self.install_log)
-                    .size(12)
-                    .font(iced::Font::MONOSPACE)
+                    .size(theme::CAPTION)
+                    .font(theme::MONO_FONT)
             )
             .height(Length::Fill),
         ]
-        .spacing(12)
+        .spacing(theme::SPACE_S)
         .into()
     }
 
     fn view_done(&self) -> Element<Message> {
         let (icon, title, detail, color) = if self.install_ok {
-            ("✓", "Installation Complete", "Remove the installation media and restart your computer.", [0.2, 0.8, 0.4])
+            ("✓", "Installation complete", "Remove the installation media and restart your computer.", theme::SONAR)
         } else {
-            ("✗", "Installation Failed", "Check the installation log for details.", [0.9, 0.4, 0.0])
+            ("✗", "Installation failed", "Check the installation log for details.", theme::CATCH)
         };
 
-        let status = text(title).size(28).color(iced::Color::from_rgb(color[0], color[1], color[2]));
-
         column![
-            text(icon).size(48),
-            status,
-            text(detail).size(14),
-            horizontal_rule(8),
-            button("Close").on_press(Message::Quit),
+            text(icon).size(48).color(color),
+            text(title).size(theme::TITLE),
+            text(detail).size(theme::BODY).color(theme::TEXT_DIM),
+            button("Restart")
+                .on_press(Message::Quit)
+                .style(theme::button_primary),
         ]
-        .spacing(16)
+        .spacing(theme::SPACE_M)
         .align_x(Alignment::Center)
         .width(Length::Fill)
         .into()
