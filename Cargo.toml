@@ -5,7 +5,7 @@ edition = "2021"
 description = "COSMIC (Iced/Rust) installer for TunaOS — drives fisherman bootc install backend"
 
 [dependencies]
-iced = { version = "0.13", features = ["tokio"] }
+iced = { version = "0.14", features = ["tokio"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
