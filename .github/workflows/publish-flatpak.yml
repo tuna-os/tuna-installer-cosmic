@@ -29,7 +29,7 @@ jobs:
         run: |
           flatpak build-bundle --oci --arch=x86_64 repo tuna-installer-cosmic.oci org.tunaos.InstallerCosmic
       - name: Upload OCI artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tuna-installer-cosmic-oci
           path: tuna-installer-cosmic.oci/
@@ -41,7 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: tuna-installer-cosmic-oci
           path: tuna-installer-cosmic.oci
