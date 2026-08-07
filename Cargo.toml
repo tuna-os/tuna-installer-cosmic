@@ -2,13 +2,24 @@
 name = "tuna-installer-cosmic"
 version = "0.1.0"
 edition = "2021"
-description = "COSMIC (Iced/Rust) installer for TunaOS — drives fisherman bootc install backend"
+description = "COSMIC (libcosmic) installer for TunaOS — drives fisherman bootc install backend"
 
 [dependencies]
-iced = { version = "0.14", features = ["tokio"] }
+# The real thing. This used to be plain `iced` with a hardcoded dark theme,
+# which is why the app never looked like a COSMIC app: none of the COSMIC
+# design system was ever linked in. `libcosmic` brings cosmic::Application,
+# the COSMIC header bar, the cosmic-theme palette and the cosmic widget set.
+libcosmic = { git = "https://github.com/pop-os/libcosmic", default-features = false, features = [
+    "winit",
+    "wgpu",
+    "tokio",
+    "a11y",
+    "desktop",
+] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = "0.3"
+png = "0.17"
