@@ -11,6 +11,7 @@
 
 mod capture;
 mod offline;
+mod product;
 mod ui;
 
 use cosmic::app::{Core, Settings, Task};
@@ -339,7 +340,10 @@ impl cosmic::Application for TunaInstaller {
             capture: flags.capture,
         };
 
-        let mut tasks = vec![app.set_window_title("TunaOS Installer".into())];
+        // The variant name from /etc/os-release ("Skipjack"), not a hardcoded
+        // "TunaOS" — see `product`.
+        let window_title = format!("{} Installer", product::name());
+        let mut tasks = vec![app.set_window_title(window_title.clone())];
         if app.capture.is_some() {
             tasks.push(capture::begin());
         } else {
@@ -347,7 +351,7 @@ impl cosmic::Application for TunaInstaller {
                 cosmic::action::app(Message::DisksScanned(r))
             }));
         }
-        app.set_header_title("TunaOS Installer".into());
+        app.set_header_title(window_title);
 
         (app, Task::batch(tasks))
     }
