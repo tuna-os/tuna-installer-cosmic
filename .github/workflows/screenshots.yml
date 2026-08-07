@@ -51,9 +51,21 @@ jobs:
           # libcosmic needs wayland/xkbcommon/fontconfig/freetype/libinput
           # headers to build even when it will run under X11.
           # mesa-vulkan-drivers is what supplies lavapipe.
+          #
+          # libxkbcommon-x11-dev is NOT redundant with libxkbcommon-dev, and the
+          # difference is invisible at build time. winit's X11 backend dlopens
+          # libxkbcommon-x11.so at RUNTIME (xkbcommon-dl), so the crate builds
+          # and links happily without it and then panics on the first frame:
+          #
+          #   thread 'main' panicked at xkbcommon-dl-0.4.2/src/x11.rs:59:
+          #   Library libxkbcommon-x11.so could not be loaded.
+          #
+          # The -dev package is what ships the unversioned .so symlink dlopen
+          # looks for, and it pulls the runtime library with it.
           sudo apt-get install -y -qq \
             pkg-config cmake clang \
-            libwayland-dev libxkbcommon-dev libfontconfig-dev libfreetype-dev \
+            libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev \
+            libfontconfig-dev libfreetype-dev \
             libinput-dev libudev-dev libgbm-dev libegl1-mesa-dev libssl-dev \
             mesa-vulkan-drivers libvulkan1 \
             adwaita-icon-theme \
