@@ -85,6 +85,12 @@ jobs:
           VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
           TUNA_CAPTURE_DIR: docs/screenshots
           RUST_LOG: warn
+          # The installer now names the variant from PRETTY_NAME in
+          # /etc/os-release. On this runner that is "Ubuntu 24.04 LTS", and
+          # these frames get committed to main as the README walkthrough, so
+          # pin the neutral product name here. The step below exercises the
+          # real os-release path and uploads its own artifact.
+          TUNA_PRODUCT_NAME: TunaOS
         run: |
           # The ICD filename differs between Mesa builds; pick whichever exists.
           for f in /usr/share/vulkan/icd.d/lvp_icd*.json; do
@@ -96,6 +102,33 @@ jobs:
           mkdir -p docs/screenshots
           # The capture exits non-zero if any screen failed its pixel audit.
           xvfb-run -a -s "-screen 0 1400x1000x24" ./target/release/tuna-installer-cosmic
+
+      # Proves the variant branding really comes from os-release rather than
+      # from the pin above: plant a host os-release the way the flatpak sees it
+      # (/run/host/etc) and capture again into a separate artifact. These
+      # frames are NOT committed — they are for looking at on a PR.
+      - name: capture with a variant os-release
+        env:
+          RUST_LOG: warn
+        run: |
+          for f in /usr/share/vulkan/icd.d/lvp_icd*.json; do
+            [ -e "$f" ] && export VK_ICD_FILENAMES="$f" && break
+          done
+          export XDG_RUNTIME_DIR="$(mktemp -d)"; chmod 700 "$XDG_RUNTIME_DIR"
+          sudo mkdir -p /run/host/etc
+          printf 'ID=tunaos\nPRETTY_NAME="Skipjack"\n' \
+            | sudo tee /run/host/etc/os-release >/dev/null
+          export TUNA_CAPTURE_DIR=variant-screenshots
+          mkdir -p "$TUNA_CAPTURE_DIR"
+          xvfb-run -a -s "-screen 0 1400x1000x24" ./target/release/tuna-installer-cosmic
+          sudo rm -rf /run/host
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gui-screenshots-variant
+          path: variant-screenshots/
+          if-no-files-found: warn
 
       # Guards the guard. If this ever exits 0 the pixel gate has stopped
       # detecting a page that did not render, and the capture above would go

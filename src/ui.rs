@@ -8,7 +8,7 @@ use cosmic::iced::{Alignment, Length};
 use cosmic::prelude::*;
 use cosmic::widget;
 
-use crate::{Message, Page, TunaInstaller, ENCRYPTION_KINDS, FILESYSTEMS};
+use crate::{product, Message, Page, TunaInstaller, ENCRYPTION_KINDS, FILESYSTEMS};
 
 pub fn view(app: &TunaInstaller) -> Element<'_, Message> {
     let spacing = cosmic::theme::active().cosmic().spacing;
@@ -75,10 +75,12 @@ fn welcome(_app: &TunaInstaller) -> Element<'_, Message> {
             .size(64)
             .icon()
             .into(),
-        widget::text::title1("Install TunaOS").into(),
-        widget::text::body(
-            "This assistant will guide you through installing TunaOS onto this computer.",
-        )
+        widget::text::title1(format!("Install {}", product::name())).into(),
+        widget::text::body(format!(
+            "Welcome. This assistant will guide you through installing {} onto this \
+             computer.",
+            product::name()
+        ))
         .into(),
         widget::text::caption(
             "You will choose a target disk and a few options. Nothing is written to any \
@@ -340,7 +342,7 @@ fn installing(app: &TunaInstaller) -> Element<'_, Message> {
     .height(Length::Fill);
 
     page_frame(
-        "Installing TunaOS",
+        format!("Installing {}", product::name()),
         "fisherman is writing the image to disk.",
         body.into(),
         widget::space::horizontal().into(),
@@ -392,8 +394,8 @@ fn done(app: &TunaInstaller) -> Element<'_, Message> {
 
 /// Title, subtitle, scrolling body, navigation footer.
 fn page_frame<'a>(
-    title: &'a str,
-    subtitle: &'a str,
+    title: impl Into<std::borrow::Cow<'a, str>> + 'a,
+    subtitle: impl Into<std::borrow::Cow<'a, str>> + 'a,
     body: Element<'a, Message>,
     footer: Element<'a, Message>,
 ) -> Element<'a, Message> {
