@@ -124,7 +124,7 @@ jobs:
             docs/screenshots/walkthrough.gif
           ls -la docs/screenshots
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         # always(): the capture FAILS when a screen renders wrong, which is
         # exactly when someone needs to look at the picture. Skipping the
         # upload on failure leaves a capture bug diagnosable only from ratios —
