@@ -1,6 +1,6 @@
 # tuna-installer-cosmic — Design
 
-Iced/Rust frontend for COSMIC. Shared flow/contract: `../INSTALLER-FRONTENDS.md`.
+libcosmic/Rust frontend for COSMIC. Shared flow/contract: `../INSTALLER-FRONTENDS.md`.
 
 ## Direction
 
@@ -11,9 +11,13 @@ identity comes from **content, not chrome**: the TunaOS species artwork
 (albacore, yellowfin, skipjack, bonito SVGs shipped in fisherman's
 `data/images/`) is the hero.
 
-Migrate from raw Iced to **libcosmic** widgets/theme when practical; until
-then, mirror its metrics (radius 8, spacing 8/12/16/24, cosmic dark/light
-palettes).
+**Done:** the app is a `cosmic::Application` on **libcosmic**. Structural
+colour and every gap come from `cosmic::theme::active().cosmic()` — its palette
+and its `spacing` scale — rather than being mirrored by hand, so the installer
+follows the user's COSMIC theme and accent automatically.
+
+(It was previously raw Iced with a hardcoded `Theme::Dark` and no libcosmic
+dependency, which is the whole reason it did not look like a COSMIC app.)
 
 ## Signature element: the species gallery
 

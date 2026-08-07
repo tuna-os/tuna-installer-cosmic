@@ -1,0 +1,153 @@
+name: screenshots
+
+# Regenerates docs/screenshots/*.png and the README walkthrough from the real
+# libcosmic UI. Three things this buys beyond nicer docs:
+#
+#  1. Design review on a PR. A clipped label or a page that renders empty is
+#     invisible in a diff and obvious in an image. The artifact is downloadable
+#     from every PR that touches the app.
+#  2. A gate that actually builds and launches the app. Until this job existed
+#     nothing in CI compiled the crate — and it did not compile: the source was
+#     written against the iced 0.13 API while Cargo.toml asked for 0.14, so
+#     `cargo build` failed on five errors and the installer could not start at
+#     all. Only publish-flatpak ran, and it never reached a cargo build.
+#  3. Proof the COSMIC theme is really linked in. The screenshots are rendered
+#     through libcosmic's wgpu pipeline, so a regression back to unstyled iced
+#     would be visible.
+#
+# Headless rendering: libcosmic is iced-on-wgpu and needs a real graphics
+# device, so Xvfb alone is not enough the way it is for the GTK siblings.
+# Mesa's lavapipe gives wgpu a CPU Vulkan adapter. No Wayland compositor is
+# needed — libcosmic's winit runs fine on the X11 backend under Xvfb, which is
+# what makes this a capture task rather than a "run cosmic-comp in CI" task.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/screenshots.yml"
+  pull_request:
+    paths:
+      - "src/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/screenshots.yml"
+  workflow_dispatch:
+
+jobs:
+  capture:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install build and render dependencies
+        run: |
+          sudo apt-get update -qq
+          # libcosmic needs wayland/xkbcommon/fontconfig/freetype/libinput
+          # headers to build even when it will run under X11.
+          # mesa-vulkan-drivers is what supplies lavapipe.
+          #
+          # libxkbcommon-x11-dev is NOT redundant with libxkbcommon-dev, and the
+          # difference is invisible at build time. winit's X11 backend dlopens
+          # libxkbcommon-x11.so at RUNTIME (xkbcommon-dl), so the crate builds
+          # and links happily without it and then panics on the first frame:
+          #
+          #   thread 'main' panicked at xkbcommon-dl-0.4.2/src/x11.rs:59:
+          #   Library libxkbcommon-x11.so could not be loaded.
+          #
+          # The -dev package is what ships the unversioned .so symlink dlopen
+          # looks for, and it pulls the runtime library with it.
+          sudo apt-get install -y -qq \
+            pkg-config cmake clang \
+            libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev \
+            libfontconfig-dev libfreetype-dev \
+            libinput-dev libudev-dev libgbm-dev libegl1-mesa-dev libssl-dev \
+            mesa-vulkan-drivers libvulkan1 \
+            adwaita-icon-theme \
+            xvfb imagemagick
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: build
+        run: cargo build --release
+
+      - name: capture every screen
+        env:
+          # Force the software Vulkan ICD. Without this wgpu finds no adapter
+          # on a GitHub runner and every frame is a valid PNG of nothing.
+          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+          TUNA_CAPTURE_DIR: docs/screenshots
+          RUST_LOG: warn
+        run: |
+          # The ICD filename differs between Mesa builds; pick whichever exists.
+          for f in /usr/share/vulkan/icd.d/lvp_icd*.json; do
+            [ -e "$f" ] && export VK_ICD_FILENAMES="$f" && break
+          done
+          echo "using ICD $VK_ICD_FILENAMES"
+          export XDG_RUNTIME_DIR="$(mktemp -d)"
+          chmod 700 "$XDG_RUNTIME_DIR"
+          mkdir -p docs/screenshots
+          # The capture exits non-zero if any screen failed its pixel audit.
+          xvfb-run -a -s "-screen 0 1400x1000x24" ./target/release/tuna-installer-cosmic
+
+      # Guards the guard. If this ever exits 0 the pixel gate has stopped
+      # detecting a page that did not render, and the capture above would go
+      # back to rubber-stamping blank screenshots.
+      - name: verify the pixel gate rejects a blank render
+        env:
+          TUNA_BLANK_SELFTEST: "1"
+          RUST_LOG: warn
+        run: |
+          for f in /usr/share/vulkan/icd.d/lvp_icd*.json; do
+            [ -e "$f" ] && export VK_ICD_FILENAMES="$f" && break
+          done
+          export XDG_RUNTIME_DIR="$(mktemp -d)"; chmod 700 "$XDG_RUNTIME_DIR"
+          export TUNA_CAPTURE_DIR="$(mktemp -d)"
+          if xvfb-run -a -s "-screen 0 1400x1000x24" \
+               ./target/release/tuna-installer-cosmic; then
+            echo "::error::pixel gate accepted a blank render" >&2
+            exit 1
+          fi
+          echo "ok: gate rejected the blank render"
+
+      - name: build the animated walkthrough
+        run: |
+          convert -delay 240 -loop 0 \
+            $(ls docs/screenshots/[0-9][0-9]-*.png | sort) \
+            docs/screenshots/walkthrough.gif
+          ls -la docs/screenshots
+
+      - uses: actions/upload-artifact@v4
+        # always(): the capture FAILS when a screen renders wrong, which is
+        # exactly when someone needs to look at the picture. Skipping the
+        # upload on failure leaves a capture bug diagnosable only from ratios —
+        # that cost the GTK sibling two debugging rounds.
+        if: always()
+        with:
+          name: gui-screenshots
+          path: docs/screenshots/
+          if-no-files-found: warn
+
+      # Only main commits. On a PR the artifact is the deliverable: pushing
+      # generated images into a contributor's branch rewrites history for files
+      # they did not touch.
+      - name: commit refreshed screenshots
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/screenshots
+          if git diff --cached --quiet; then
+            echo "no screenshot changes"
+            exit 0
+          fi
+          # [skip ci] stops this commit triggering another run of itself.
+          git commit -m "docs: refresh GUI screenshots [skip ci]"
+          git push
