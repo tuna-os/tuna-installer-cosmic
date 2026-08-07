@@ -123,7 +123,7 @@ jobs:
           xvfb-run -a -s "-screen 0 1400x1000x24" ./target/release/tuna-installer-cosmic
           sudo rm -rf /run/host
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: gui-screenshots-variant
