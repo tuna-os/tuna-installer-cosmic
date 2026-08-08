@@ -266,6 +266,8 @@ pub enum Message {
     BackPage,
     SelectDisk(usize),
     DisksScanned(Result<Vec<DiskInfo>, String>),
+    /// Resolved asynchronously so init() never blocks on a host command.
+    LiveImageResolved(Option<String>),
     HostnameChanged(String),
     FilesystemChanged(usize),
     EncryptionChanged(usize),
@@ -390,6 +392,7 @@ impl cosmic::Application for TunaInstaller {
         let mut recipe = Recipe::default();
         let mut disks = Vec::new();
         let live;
+        let mut init_tasks: Vec<Task<Message>> = Vec::new();
 
         if capturing {
             // Fixtures. In capture mode nothing shells out: no `bootc status`,
@@ -402,11 +405,20 @@ impl cosmic::Application for TunaInstaller {
             // Offline install support (spec §4): live-ISO mode installs the
             // running container (empty image); embedded stores are always
             // passed.
-            live = offline::live_iso_image();
-            if live.is_some() {
-                recipe.image = String::new();
-            }
+            //
+            // `live_iso_image` shells out to the host via flatpak-spawn and
+            // MUST NOT block init(). Iced creates the window *after* init
+            // returns, so a hung host command would leave the process alive
+            // with no window — exactly the failure mode tunaOS#678 caught.
+            // Defer it to an async task and start with `live_image = None`;
+            // the Confirm page handles `None` gracefully (it just shows the
+            // default image ref).
+            init_tasks.push(Task::perform(
+                tokio::task::spawn_blocking(offline::live_iso_image),
+                |r| cosmic::action::app(Message::LiveImageResolved(r.unwrap_or(None))),
+            ));
             recipe.additional_image_stores = offline::offline_stores();
+            live = None;
         }
 
         if let Some(first) = disks.first() {
@@ -440,6 +452,7 @@ impl cosmic::Application for TunaInstaller {
         // "TunaOS" — see `product`.
         let window_title = format!("{} Installer", product::name());
         let mut tasks = vec![app.set_window_title(window_title.clone())];
+        tasks.append(&mut init_tasks);
         if app.capture.is_some() {
             tasks.push(capture::begin());
         } else {
@@ -510,6 +523,13 @@ impl cosmic::Application for TunaInstaller {
             Message::DisksScanned(Err(err)) => {
                 self.install_log
                     .push_str(&format!("Disk scan error: {err}\n"));
+                Task::none()
+            }
+            Message::LiveImageResolved(live) => {
+                self.live_image = live;
+                if self.live_image.is_some() {
+                    self.recipe.image = String::new();
+                }
                 Task::none()
             }
             Message::HostnameChanged(h) => {
