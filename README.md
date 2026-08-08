@@ -53,15 +53,25 @@ GPL-3.0-only
 ## Flatpak
 
 ```bash
-# One-time: generate offline cargo sources for flatpak-builder
-pip install aiohttp toml && python3 flatpak-cargo-generator.py Cargo.lock -o flatpak/cargo-sources.json
+# Regenerate the offline cargo sources for flatpak-builder.
+# NOT one-time: re-run this in the same commit as any Cargo.lock change.
+just cargo-sources
 
 flatpak-builder --user --install --force-clean build flatpak/org.tunaos.InstallerCosmic.json
 flatpak run org.tunaos.InstallerCosmic
 ```
 
-`flatpak-cargo-generator.py` comes from
-https://github.com/flatpak/flatpak-builder-tools/tree/master/cargo
+The recipe downloads `flatpak-cargo-generator.py` from
+https://github.com/flatpak/flatpak-builder-tools/tree/master/cargo and runs it
+against `Cargo.lock`. It must be the generator and not `cargo vendor`, because
+the lockfile pulls ~50 packages from git (libcosmic, winit, accesskit,
+cryoglyph, …) and only the generator emits the `[source."<git url>"]
+replace-with` stanzas that let `cargo --offline build` resolve them.
+
+If `flatpak/cargo-sources.json` falls behind `Cargo.lock`, the Flatpak build
+fails inside flatpak-builder with either `perhaps a crate was updated and
+forgotten to be re-vendored?` or `can't checkout from '<git url>': you are in
+the offline mode (--offline)`.
 
 ## Offline installs
 

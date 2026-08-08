@@ -33,3 +33,25 @@ capture-selftest:
     xvfb-run -a -s "-screen 0 1400x1000x24" ./target/release/tuna-installer-cosmic
     if [ $? -eq 0 ]; then echo "SELFTEST BROKEN: gate accepted a blank render" >&2; exit 1; fi
     echo "ok: gate rejected the blank render"
+
+# Regenerate flatpak/cargo-sources.json from Cargo.lock.
+#
+# MUST be re-run whenever Cargo.lock changes. flatpak-builder runs
+# `cargo --offline build`, so any crate that is in the lockfile but not in
+# this file fails the Flatpak build. Unlike `cargo vendor`, this generator
+# also emits the *git* dependencies (libcosmic, winit, accesskit, cryoglyph,
+# …) and the `[source."<url>"] replace-with` stanzas cargo needs to resolve
+# them without network.
+cargo-sources:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    tmp="$(mktemp -d)"
+    trap 'rm -rf "$tmp"' EXIT
+    curl -sSfL -o "$tmp/flatpak-cargo-generator.py" \
+      https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/cargo/flatpak-cargo-generator.py
+    python3 -m pip install --quiet aiohttp toml tomlkit
+    python3 "$tmp/flatpak-cargo-generator.py" Cargo.lock -o flatpak/cargo-sources.json
+    # The generator still names the vendor config `config`; cargo deprecated
+    # that name in favour of `config.toml` and warns about it on every build.
+    sed -i 's/"dest-filename": "config"$/"dest-filename": "config.toml"/' flatpak/cargo-sources.json
+    python3 -c 'import json,sys; json.load(open("flatpak/cargo-sources.json")); print("flatpak/cargo-sources.json regenerated")'
