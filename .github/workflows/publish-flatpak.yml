@@ -14,7 +14,16 @@ jobs:
     name: Build Flatpak OCI
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-24.08
+      # Must track "runtime-version" in flatpak/org.tunaos.InstallerCosmic.json.
+      # The tag only decides which runtime is preinstalled; the manifest decides
+      # what is actually built against, so a mismatch silently costs a full
+      # runtime download rather than failing.
+      #
+      # The branch also fixes the Rust toolchain: org.freedesktop.Sdk.Extension
+      # .rust-stable//24.08 is frozen at rustc 1.89.0, and libcosmic 1.0 /
+      # iced 0.14 / wgpu 28 declare rust-version 1.93 / 1.92 / 1.92. That is
+      # what kept this job red for 17 runs. //25.08 ships rustc 1.97.1.
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-25.08
       options: --privileged
     steps:
       - uses: actions/checkout@v7
