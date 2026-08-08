@@ -8,7 +8,9 @@ use cosmic::iced::{Alignment, Length};
 use cosmic::prelude::*;
 use cosmic::widget;
 
-use crate::{product, Message, Page, TunaInstaller, ENCRYPTION_KINDS, FILESYSTEMS};
+use crate::{
+    available_encryption_choices, product, Message, Page, TunaInstaller, FILESYSTEMS,
+};
 
 pub fn view(app: &TunaInstaller) -> Element<'_, Message> {
     let spacing = cosmic::theme::active().cosmic().spacing;
@@ -176,9 +178,26 @@ fn options(app: &TunaInstaller) -> Element<'_, Message> {
     let recipe = app.recipe();
 
     let fs_index = FILESYSTEMS.iter().position(|f| *f == recipe.filesystem);
-    let enc_index = ENCRYPTION_KINDS
+
+    // tunaOS#734: this list is `has_tpm`-filtered, same set XFCE offers on
+    // this hardware, and `idx` below is a position in it — NOT in the full
+    // `ENCRYPTION_CHOICES` table. `update()`'s `EncryptionChanged` handler
+    // rebuilds the identical filtered list before indexing into it, so the
+    // two stay in lockstep without passing the list through a message.
+    let enc_choices = available_encryption_choices(app.has_tpm());
+    let enc_index = enc_choices
         .iter()
-        .position(|k| *k == recipe.encryption.enc_type);
+        .position(|c| c.id == recipe.encryption.enc_type);
+    let enc_labels: Vec<&str> = enc_choices.iter().map(|c| c.label).collect();
+    let enc_description = enc_index
+        .and_then(|i| enc_choices.get(i))
+        .map(|c| c.description)
+        .unwrap_or_default();
+    // "luks-passphrase" and "tpm2-luks-passphrase" both contain this
+    // substring; bare "tpm2-luks" and "none" don't. Same test `encryption_ok()`
+    // uses to gate Continue below, so the field's presence and the field's
+    // requiredness can never disagree.
+    let needs_passphrase = recipe.encryption.enc_type.contains("passphrase");
 
     let system = widget::settings::section()
         .title("System")
@@ -193,19 +212,28 @@ fn options(app: &TunaInstaller) -> Element<'_, Message> {
             widget::dropdown(&FILESYSTEMS, fs_index, Message::FilesystemChanged),
         ));
 
-    let mut security = widget::settings::section()
-        .title("Encryption")
-        .add(widget::settings::item(
-            "Disk encryption",
-            widget::dropdown(&ENCRYPTION_KINDS, enc_index, Message::EncryptionChanged),
-        ));
+    let mut security = widget::settings::section().title("Encryption").add(
+        widget::settings::item::builder("Disk encryption")
+            .description(enc_description)
+            // Handed over by value, not as `.as_slice()`: the returned
+            // `Element` outlives this function, so a borrow of the local
+            // `Vec` would not compile (E0515). `Vec<&'static str>` converts
+            // into an owned `Cow<[&str]>`, which the dropdown keeps.
+            .control(widget::dropdown(
+                enc_labels,
+                enc_index,
+                Message::EncryptionChanged,
+            )),
+    );
 
-    // Only build the passphrase controls once encryption is actually on. The
-    // KDE sibling crashed precisely here: its constructor called setChecked()
-    // before the passphrase widgets existed, so the toggled handler ran against
-    // uninitialised pointers. In Rust the equivalent mistake cannot compile,
-    // but the conditional is still the honest UI.
-    if recipe.encryption.enc_type != "none" {
+    // Only build the passphrase controls once the chosen encryption actually
+    // carries one. The KDE sibling crashed precisely at this kind of
+    // conditional: its constructor called setChecked() before the passphrase
+    // widgets existed, so the toggled handler ran against uninitialised
+    // pointers. In Rust the equivalent mistake cannot compile, but the
+    // conditional is still the honest UI — and "tpm2-luks" alone must NOT show
+    // this field, since fisherman never reads a passphrase for it.
+    if needs_passphrase {
         security = security.add(widget::settings::item(
             "Passphrase",
             widget::secure_input(
@@ -231,7 +259,11 @@ fn options(app: &TunaInstaller) -> Element<'_, Message> {
         body.into(),
         nav_row(
             Some(Message::BackPage),
-            Some(("Continue", Message::NextPage, false)),
+            // Blocked while a passphrase-carrying choice has an empty
+            // passphrase, so this can never reach Confirm/Install and only
+            // then discover fisherman rejects the recipe (tunaOS#734).
+            app.encryption_ok()
+                .then_some(("Continue", Message::NextPage, false)),
         ),
     )
 }
