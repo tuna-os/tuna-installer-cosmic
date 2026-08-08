@@ -191,7 +191,71 @@ pub struct DiskInfo {
 }
 
 pub const FILESYSTEMS: [&str; 2] = ["xfs", "btrfs"];
-pub const ENCRYPTION_KINDS: [&str; 2] = ["none", "luks"];
+
+/// One entry in the encryption picker.
+///
+/// `id` is what actually lands in `recipe.encryption.type` and it MUST be one
+/// of the four values `fisherman` accepts (`fisherman/internal/recipe/recipe.go`
+/// `Validate()`): "none", "luks-passphrase", "tpm2-luks",
+/// "tpm2-luks-passphrase". Anything else — the previous `"luks"` here — fails
+/// recipe validation and the install never starts, which is a worse failure
+/// mode than never offering encryption at all: the user thinks they chose it.
+#[derive(Debug, Clone, Copy)]
+pub struct EncryptionChoice {
+    pub id: &'static str,
+    pub label: &'static str,
+    pub description: &'static str,
+    /// Only offered when a TPM2 chip is present (tunaOS#734 / tuna-installer-xfce
+    /// `ENCRYPTION_CHOICES`, which this mirrors value-for-value so a recipe
+    /// produced by either frontend means the same thing).
+    pub tpm: bool,
+}
+
+// `static`, not `const`: `available_encryption_choices` hands out
+// `&'static EncryptionChoice`s borrowed straight from this table. A `const`
+// has no fixed address (each use site may get its own inlined copy), so
+// relying on it for a genuinely `'static` borrow depends on rvalue-static-
+// promotion kicking in. `static` sidesteps the question — it has exactly one
+// address for the life of the program, so the borrow is `'static` outright.
+pub static ENCRYPTION_CHOICES: [EncryptionChoice; 4] = [
+    EncryptionChoice {
+        id: "none",
+        label: "No encryption",
+        description: "Anyone with the disk can read your files.",
+        tpm: false,
+    },
+    EncryptionChoice {
+        id: "luks-passphrase",
+        label: "Passphrase",
+        description: "You'll type it at every boot.",
+        tpm: false,
+    },
+    EncryptionChoice {
+        id: "tpm2-luks",
+        label: "TPM",
+        description: "Unlocks automatically on this hardware.",
+        tpm: true,
+    },
+    EncryptionChoice {
+        id: "tpm2-luks-passphrase",
+        label: "TPM + passphrase",
+        description: "Automatic unlock, passphrase as fallback.",
+        tpm: true,
+    },
+];
+
+/// The choices actually selectable right now. TPM-gated entries are dropped
+/// entirely rather than shown-disabled when there is no TPM — same call
+/// `tuna-installer-xfce` makes (`SetupPage.__init__`: `if value.startswith("tpm2")
+/// and not self.has_tpm: continue`), and for the same reason: a dropdown entry
+/// that silently produces an unenrollable recipe is worse than one that isn't
+/// offered.
+pub fn available_encryption_choices(has_tpm: bool) -> Vec<&'static EncryptionChoice> {
+    ENCRYPTION_CHOICES
+        .iter()
+        .filter(|c| !c.tpm || has_tpm)
+        .collect()
+}
 
 // -------------------------------------------------------------- messages ----
 
@@ -224,6 +288,9 @@ pub struct TunaInstaller {
     install_ok: bool,
     installing: bool,
     passphrase_hidden: bool,
+    /// `/sys/class/tpm/tpm0` existence, checked once at startup — same probe
+    /// `tuna-installer-xfce` uses. Gates the two `tpm2-*` encryption choices.
+    has_tpm: bool,
     /// `Some` only in capture mode. Its presence is also the hard interlock
     /// that stops the capture harness ever running a real install.
     capture: Option<capture::Capture>,
@@ -259,6 +326,25 @@ impl TunaInstaller {
     }
     pub fn capturing(&self) -> bool {
         self.capture.is_some()
+    }
+    pub fn has_tpm(&self) -> bool {
+        self.has_tpm
+    }
+
+    /// Whether the Options page is allowed to advance. The dropdown can only
+    /// ever hold a valid `enc_type` (see `Message::EncryptionChanged`), so the
+    /// one thing left to check is the passphrase fisherman's own `Validate()`
+    /// requires for "luks-passphrase" and "tpm2-luks-passphrase": both contain
+    /// the substring "passphrase", matching `tuna-installer-xfce`'s
+    /// `"passphrase" in enc_type()` check. Without this gate, a user who left
+    /// the field blank would sail through Confirm and only discover the
+    /// problem when fisherman rejects the recipe on the Installing page.
+    pub fn encryption_ok(&self) -> bool {
+        if self.recipe.encryption.enc_type.contains("passphrase") {
+            !self.recipe.encryption.passphrase.is_empty()
+        } else {
+            true
+        }
     }
 
     fn advance(&mut self) -> Option<Page> {
@@ -326,6 +412,14 @@ impl cosmic::Application for TunaInstaller {
             recipe.disk = format!("/dev/{}", first.name);
         }
 
+        // Same probe as tuna-installer-xfce (`os.path.exists("/sys/class/tpm/tpm0")`).
+        // A read-only sysfs check, not a shell-out, so it runs unconditionally —
+        // including under capture: the Xvfb CI runner has no TPM, so this comes
+        // back false there and the tpm2-* choices simply don't appear in the
+        // captured "options" screenshot, same as they wouldn't on real hardware
+        // without a chip.
+        let has_tpm = std::path::Path::new("/sys/class/tpm/tpm0").exists();
+
         let mut app = Self {
             core,
             page: Page::Welcome,
@@ -337,6 +431,7 @@ impl cosmic::Application for TunaInstaller {
             install_ok: false,
             installing: false,
             passphrase_hidden: true,
+            has_tpm,
             capture: flags.capture,
         };
 
@@ -428,9 +523,18 @@ impl cosmic::Application for TunaInstaller {
                 Task::none()
             }
             Message::EncryptionChanged(idx) => {
-                if let Some(kind) = ENCRYPTION_KINDS.get(idx) {
-                    self.recipe.encryption.enc_type = (*kind).to_string();
-                    if *kind == "none" {
+                // Recompute the same has_tpm-filtered list ui.rs built the
+                // dropdown from, so `idx` (a position in THAT list) resolves
+                // to the same choice the user actually saw and clicked.
+                let choices = available_encryption_choices(self.has_tpm);
+                if let Some(choice) = choices.get(idx) {
+                    self.recipe.encryption.enc_type = choice.id.to_string();
+                    // Only "luks-passphrase" and "tpm2-luks-passphrase" carry a
+                    // passphrase; clear it for "none" and bare "tpm2-luks" so a
+                    // stale value from a previous choice can't linger into the
+                    // recipe (fisherman ignores it, but Confirm would still
+                    // display it — see `.contains("passphrase")` above).
+                    if !choice.id.contains("passphrase") {
                         self.recipe.encryption.passphrase.clear();
                     }
                 }
