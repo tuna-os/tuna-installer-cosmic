@@ -215,8 +215,12 @@ fn options(app: &TunaInstaller) -> Element<'_, Message> {
     let mut security = widget::settings::section().title("Encryption").add(
         widget::settings::item::builder("Disk encryption")
             .description(enc_description)
+            // Handed over by value, not as `.as_slice()`: the returned
+            // `Element` outlives this function, so a borrow of the local
+            // `Vec` would not compile (E0515). `Vec<&'static str>` converts
+            // into an owned `Cow<[&str]>`, which the dropdown keeps.
             .control(widget::dropdown(
-                enc_labels.as_slice(),
+                enc_labels,
                 enc_index,
                 Message::EncryptionChanged,
             )),
