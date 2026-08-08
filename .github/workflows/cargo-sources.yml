@@ -1,0 +1,49 @@
+name: cargo-sources
+
+# flatpak-builder runs `cargo --offline build`, so flatpak/cargo-sources.json
+# must vendor every package in Cargo.lock. Nothing regenerates it: it is built
+# by `just cargo-sources` and Renovate automerges lockfile bumps, so the two
+# files drift with nobody in the loop.
+#
+# Until this job existed the only thing that noticed was "Build Flatpak OCI",
+# which runs on push to main — i.e. after the merge, on a branch nobody is
+# looking at. That is exactly how main stayed red for 14 consecutive runs
+# (2026-08-01 .. 2026-08-08) while six Cargo.lock bumps merged on top of a
+# cargo-sources.json last generated in d79b5e5c.
+#
+# Deliberately NOT a regenerate-and-diff check. The generator's output is
+# byte-stable for a given lockfile, but `just cargo-sources` curls it from
+# flatpak-builder-tools `master` and clones ~11 git repos, so a diff gate would
+# also fail on upstream's commits and on network weather. A gate that goes red
+# for reasons the author did not cause teaches people to ignore red, which is
+# the failure mode this is meant to end. The structural check asserts the
+# property that actually breaks the build, from the two committed files alone,
+# in about a second.
+#
+# No `paths:` filter, for the same reason: this costs seconds, and a filter
+# that misses a case is a filter that silently stops gating.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    name: cargo-sources matches Cargo.lock
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Just
+        uses: extractions/setup-just@v4
+
+      # Same recipe a contributor runs locally, so the two cannot diverge.
+      - name: check flatpak/cargo-sources.json is in sync with Cargo.lock
+        run: just check-cargo-sources
+
+      # Guards the guard. If this ever passes silently the check above has
+      # stopped detecting missing packages and would rubber-stamp the drift.
+      - name: verify the check rejects a desynced cargo-sources.json
+        run: just check-cargo-sources-selftest

@@ -55,3 +55,16 @@ cargo-sources:
     # that name in favour of `config.toml` and warns about it on every build.
     sed -i 's/"dest-filename": "config"$/"dest-filename": "config.toml"/' flatpak/cargo-sources.json
     python3 -c 'import json,sys; json.load(open("flatpak/cargo-sources.json")); print("flatpak/cargo-sources.json regenerated")'
+
+# Renovate automerges Cargo.lock bumps and nothing regenerates the vendored
+# sources, so the two drift silently and "Build Flatpak OCI" on main is the
+# only thing that notices — that is the 14-run outage. This is a structural
+# comparison of the two committed files: no network, no clones, ~1 second.
+#
+# Fail if flatpak/cargo-sources.json has drifted from Cargo.lock.
+check-cargo-sources:
+    python3 .github/scripts/check-cargo-sources.py
+
+# Verify the sync gate still rejects a desynced file. MUST detect the drift.
+check-cargo-sources-selftest:
+    python3 .github/scripts/check-cargo-sources.py --selftest

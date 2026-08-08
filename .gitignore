@@ -3,3 +3,4 @@
 build/
 Cargo.lock.orig
 variant-screenshots/
+__pycache__/
