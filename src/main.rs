@@ -10,6 +10,7 @@
 //! palette and spacing, and the cosmic widget set.
 
 mod capture;
+mod readiness;
 mod offline;
 mod product;
 mod ui;
@@ -590,6 +591,11 @@ impl cosmic::Application for TunaInstaller {
     }
 
     fn view(&self) -> Element<'_, Message> {
+        // First frame = the strongest honest "the UI came up" signal libcosmic
+        // offers. See readiness.rs: this frontend is the one that proved
+        // `flatpak ps` insufficient, by running with no window ever appearing
+        // while the smoke check stayed green. Cheap after the first call.
+        readiness::stamp_first_frame(APP_ID, self.page.slug());
         ui::view(self)
     }
 }
