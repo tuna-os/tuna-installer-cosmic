@@ -73,6 +73,17 @@ fails inside flatpak-builder with either `perhaps a crate was updated and
 forgotten to be re-vendored?` or `can't checkout from '<git url>': you are in
 the offline mode (--offline)`.
 
+That used to be discovered on `main`, after the merge — `Build Flatpak OCI`
+only runs on push — which is how main stayed red for 14 consecutive runs while
+Renovate automerged six lockfile bumps on top of stale sources. It is now gated
+on the PR by `.github/workflows/cargo-sources.yml`, which asserts that every
+package in `Cargo.lock` is vendored in the JSON and that every git remote has
+its `replace-with` stanza. Run the same check locally:
+
+```bash
+just check-cargo-sources
+```
+
 ## Offline installs
 
 On a TunaOS live ISO the installer detects the booted bootc image
