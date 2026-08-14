@@ -9,6 +9,19 @@ description = "COSMIC (libcosmic) installer for TunaOS — drives fisherman boot
 # which is why the app never looked like a COSMIC app: none of the COSMIC
 # design system was ever linked in. `libcosmic` brings cosmic::Application,
 # the COSMIC header bar, the cosmic-theme palette and the cosmic widget set.
+#
+# Three RUSTSEC advisories are locked in transitively through this tree and
+# confirmed unresolvable by `cargo update` alone (dry-run: "Locking 0
+# packages to latest compatible versions" — each dependent's own version
+# requirement caps below the fixed release, so this needs an upstream bump,
+# not just a lockfile refresh):
+#   - quick-xml 0.39.4, via wayland-scanner (RUSTSEC-2026-0194/0195 XML
+#     parsing DoS; fixed >= 0.41.0)
+#   - gettext-rs 0.7.7, via freedesktop-desktop-entry (RUSTSEC-2026-0244
+#     unsound setlocale/TextDomain::init; fixed >= 0.8.0)
+#   - lru 0.16.4, via cryoglyph (RUSTSEC-2026-0253 use-after-free in
+#     LruCache::pop() on a panicking Drop; fixed >= 0.18.2)
+# See #29.
 libcosmic = { git = "https://github.com/pop-os/libcosmic", default-features = false, features = [
     "winit",
     "wgpu",
