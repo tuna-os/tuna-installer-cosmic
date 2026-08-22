@@ -1,88 +1,64 @@
-# tuna-installer-cosmic — Design
+# TunaOS COSMIC installer design
 
-libcosmic/Rust frontend for COSMIC. Shared flow/contract: `../INSTALLER-FRONTENDS.md`.
+This repository contains the libcosmic frontend for the
+[fisherman](https://github.com/tuna-os/fisherman) bootc installation backend.
+The frontend gathers and validates the user's choices, writes the fisherman
+recipe, and presents the backend's progress and result.
 
-## Direction
+## Flow
 
-COSMIC has a strong, young design system (rounded 8 px cards, generous
-padding, Fira Sans, accent-driven theming) — fighting it would read as broken,
-not bold. So this frontend is the most system-faithful of the four, and its
-identity comes from **content, not chrome**: the TunaOS species artwork
-(albacore, yellowfin, skipjack, bonito SVGs shipped in fisherman's
-`data/images/`) is the hero.
+The installer has six screens:
 
-**Done:** the app is a `cosmic::Application` on **libcosmic**. Structural
-colour and every gap come from `cosmic::theme::active().cosmic()` — its palette
-and its `spacing` scale — rather than being mirrored by hand, so the installer
-follows the user's COSMIC theme and accent automatically.
+1. **Welcome** introduces the detected TunaOS product.
+2. **Select a disk** lists the devices returned by `lsblk -J` and requires a
+   selection before continuing.
+3. **Options** collects the hostname, filesystem, and encryption settings.
+4. **Confirm** summarizes the choices and marks installation as a destructive
+   action.
+5. **Installing** writes a mode-0600 recipe under `XDG_RUNTIME_DIR`, starts
+   fisherman, and streams its output.
+6. **Finished** reports success or failure and prompts the user to restart.
 
-(It was previously raw Iced with a hardcoded `Theme::Dark` and no libcosmic
-dependency, which is the whole reason it did not look like a COSMIC app.)
+The header bar shows the current step and overall progress. Navigation is
+reversible through Confirm; starting installation is the boundary after which
+the UI no longer offers Back or Continue.
 
-## Signature element: the species gallery
+## COSMIC integration
 
-The Source step is a card gallery, one card per catalog leaf group:
+The app implements `cosmic::Application` and uses libcosmic widgets, spacing,
+colors, and the user's active accent. Structural colors come from the COSMIC
+theme rather than fixed RGB values so that light and dark themes remain
+legible. The destructive action and status text use the corresponding COSMIC
+semantic styles.
 
-- Species SVG at 96 px, name in Fira Sans 600, one-line description,
-  the OCI ref in mono underneath at 60 % opacity.
-- Offline-available cards get a filled `offline` chip (`--sonar` bg) and sort
-  first; network-only cards show a subtle download glyph.
-- Selection = COSMIC accent ring (respect the user's system accent color; do
-  not hardcode ours here).
-- On the live ISO, a full-width "Install TunaOS — this system, no download"
-  card sits above the gallery, preselected.
+The layout is a centered, single-column wizard. Device choices use COSMIC list
+items, configuration choices use settings sections, and the installation log
+uses monospaced text. Copy is short, factual, and sentence case.
 
-The gallery is the only page with imagery. Every other page is quiet COSMIC
-form layout.
+## Product and installation data
 
-## Tokens
+The displayed product name comes from the host's `PRETTY_NAME` in
+`/etc/os-release` (or `/run/host/etc/os-release` in the Flatpak). The live ISO
+path can leave the recipe's image field empty so fisherman installs the booted
+bootc image without downloading it. Embedded OCI stores are passed through as
+additional image stores.
 
-Defer to COSMIC theme (`cosmic-theme` palette, user accent) for all
-structural color. Brand appears in exactly two places:
+## Capture mode
 
-| Token | Hex | Use |
-|---|---|---|
-| `--sonar` | `#2EC4B6` | Offline chip, install-progress bar fill |
-| `--catch` | `#F4A259` | Destructive confirm (Install button, erase warning) |
+Setting `TUNA_CAPTURE_DIR` replaces disk and installation data with fixtures
+and renders every screen for the
+[GUI walkthrough](docs/gui-walkthrough.md). Capture mode refuses
+`StartInstall`, so generating documentation cannot start fisherman or modify a
+disk. The harness reads back the frame presented by wgpu and rejects blank or
+nearly blank renders.
 
-## Type
+The CI capture runs under Xvfb with Mesa lavapipe. See the walkthrough and the
+`capture` recipe in `justfile` for local prerequisites and commands.
 
-- Fira Sans (COSMIC default) for all UI; sizes from the COSMIC scale
-  (title 24/600, heading 18/600, body 14/400, caption 12/400).
-- Fira Mono for device names, refs, log output.
+## Accessibility and quality
 
-## Layout
-
-```
-┌────────────────────────────────────────────────────────────┐
-│  ● ● ● ● ○ ○ ○ ○                    Choose what to install │
-│                                                            │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │ ⬤ Install TunaOS — this system      [no download]   │  │
-│  └──────────────────────────────────────────────────────┘  │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐      │
-│  │ (fish)   │ │ (fish)   │ │ (fish)   │ │ (fish)   │      │
-│  │ Albacore │ │Yellowfin │ │ Skipjack │ │  Bonito  │      │
-│  │ offline  │ │ offline  │ │    ↓     │ │    ↓     │      │
-│  └──────────┘ └──────────┘ └──────────┘ └──────────┘      │
-│                                                            │
-│                              [ Back ]      [ Continue ]    │
-└────────────────────────────────────────────────────────────┘
-```
-
-- Step indicator: COSMIC-style dot strip, top-left; label top-right.
-- Single centered column, max 760 px; cards in a 4-up responsive grid
-  (2-up below 900 px).
-- Progress page: segmented bar (9 segments = fisherman steps) filled in
-  `--sonar`, current step name as heading, log in a collapsible mono panel.
-
-## Copy
-
-COSMIC register: sentence case, short, factual. "Everything on this disk will
-be erased." Buttons: Continue / Back / Install / Restart.
-
-## Quality floor
-
-Honor COSMIC light/dark and accent instantly (subscribe to theme changes).
-Full keyboard traversal of the gallery grid. Species SVGs get accessible
-names. Reduced-motion: no card hover lift, instant page transitions.
+Controls use explicit labels and disabled states to prevent incomplete input
+from advancing. Theme-derived semantic colors preserve contrast across COSMIC
+themes. Changes to the wizard should be checked with keyboard navigation and
+by reviewing all generated screens in both the ordinary and variant-branded
+capture artifacts.
