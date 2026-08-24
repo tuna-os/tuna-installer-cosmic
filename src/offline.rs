@@ -108,25 +108,25 @@ pub fn offline_images(stores: &[String]) -> HashSet<String> {
     refs
 }
 
-/// Write the recipe 0600 under XDG_RUNTIME_DIR (it may hold secrets).
+/// Write the recipe 0600 in a fresh private directory (it may hold secrets).
+///
+/// Uses NamedTempFile (O_EXCL + O_NOFOLLOW + 0600) in a directory under
+/// XDG_RUNTIME_DIR, falling back to the system temp dir. Never writes to a
+/// fixed path: this used to be `<base>/tuna-installer/recipe.json` opened
+/// with `create(true)`, which follows a pre-existing attacker symlink and
+/// silently ignores the 0600 mode for a pre-existing file — a local user
+/// could read the LUKS passphrase or swap the recipe root executes.
 pub fn write_recipe(json: &str) -> std::io::Result<std::path::PathBuf> {
     use std::io::Write;
-    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+    use tempfile::NamedTempFile;
 
     let base = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".into());
-    let dir = Path::new(&base).join("tuna-installer");
-    std::fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(&dir)?;
-    let path = dir.join("recipe.json");
-    let mut f = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(&path)?;
+    let mut f = NamedTempFile::new_in(base)?;
     f.write_all(json.as_bytes())?;
+    // Keep the file after the TempFile is dropped; the caller removes it once
+    // fisherman has exited. The unpredictable 0600 name survives here, so no
+    // fixed path is ever handed to sudo/pkexec.
+    let (_, path) = f.keep()?;
     Ok(path)
 }
 
@@ -214,7 +214,7 @@ mod tests {
     // ── recipe writing ────────────────────────────────────────────────────────
 
     #[test]
-    fn write_recipe_creates_0600_file_and_overwrites() {
+    fn write_recipe_creates_0600_unpredictable_file() {
         use std::os::unix::fs::PermissionsExt;
 
         let dir = temp_workdir("recipe");
@@ -227,11 +227,19 @@ mod tests {
         let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600, "recipe must be 0600 (may hold secrets)");
 
-        // Overwrite keeps 0600 and replaces content.
-        write_recipe("{\"v\":2}").unwrap();
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "{\"v\":2}");
-        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        // Every write gets a fresh unpredictable path — never the fixed
+        // `<base>/tuna-installer/recipe.json` that a local user could
+        // pre-create, symlink, or read before chmod (gh-39).
+        let path2 = write_recipe("{\"v\":2}").unwrap();
+        assert_ne!(path, path2, "recipe path must not be a fixed constant");
+        assert_eq!(std::fs::read_to_string(&path2).unwrap(), "{\"v\":2}");
+        let mode = std::fs::metadata(&path2).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600);
+        let name = path2.file_name().unwrap().to_string_lossy();
+        assert!(
+            !name.contains("recipe.json") || name.len() > 11,
+            "file name must be unpredictable, got {name}"
+        );
 
         unsafe { std::env::remove_var("XDG_RUNTIME_DIR") };
         std::fs::remove_dir_all(&dir).ok();
