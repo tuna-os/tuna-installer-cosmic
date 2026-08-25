@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Install TunaOS
+Comment=Install TunaOS on this computer
+Exec=tuna-installer-cosmic
+Icon=org.tunaos.InstallerCosmic
+Terminal=false
+Categories=System;
+Keywords=install;installer;tunaos;bootc;

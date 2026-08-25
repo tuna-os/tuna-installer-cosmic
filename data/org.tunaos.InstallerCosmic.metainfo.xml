@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright TunaOS -->
+<component type="desktop-application">
+  <id>org.tunaos.InstallerCosmic</id>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+
+  <name>Install TunaOS</name>
+  <summary>Set up TunaOS on this computer</summary>
+
+  <description>
+    <p>
+      The COSMIC front-end for the TunaOS installer. It walks through
+      picking a disk, choosing whether to encrypt it, and writing the system
+      image, then hands over to a first boot of TunaOS.
+    </p>
+    <p>
+      Installation itself is carried out by the fisherman bootc backend, so
+      every desktop front-end installs exactly the same system.
+    </p>
+    <p>
+      This front-end comes preinstalled on the TunaOS COSMIC live image. You
+      do not normally need to install it by hand.
+    </p>
+  </description>
+
+  <developer id="org.tunaos">
+    <name>TunaOS</name>
+  </developer>
+
+  <launchable type="desktop-id">org.tunaos.InstallerCosmic.desktop</launchable>
+
+  <content_rating type="oars-1.1" />
+
+  <requires>
+    <display_length compare="ge">360</display_length>
+  </requires>
+  <recommends>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </recommends>
+  <supports>
+    <control>touch</control>
+  </supports>
+
+  <branding>
+    <color type="primary" scheme_preference="light">#A8E6E0</color>
+    <color type="primary" scheme_preference="dark">#14504B</color>
+  </branding>
+
+  <url type="homepage">https://tunaos.org</url>
+  <url type="bugtracker">https://github.com/tuna-os/tuna-installer-cosmic/issues</url>
+  <url type="vcs-browser">https://github.com/tuna-os/tuna-installer-cosmic</url>
+
+  <categories>
+    <category>System</category>
+  </categories>
+
+  <keywords>
+    <keyword>install</keyword>
+    <keyword>installer</keyword>
+    <keyword>tunaos</keyword>
+    <keyword>bootc</keyword>
+  </keywords>
+</component>
