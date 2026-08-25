@@ -686,3 +686,45 @@ impl TunaInstaller {
         Ok(output.status.code().unwrap_or(-1))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recipe_default_values_and_json_serialization() {
+        let recipe = Recipe::default();
+        assert_eq!(recipe.filesystem, "xfs");
+        assert_eq!(recipe.encryption.enc_type, "none");
+        assert_eq!(recipe.distro_id, "tunaos");
+        assert_eq!(recipe.hostname, "tunaos");
+        assert!(recipe.selinux_disabled);
+
+        let json_str = serde_json::to_string(&recipe).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+
+        assert_eq!(json["filesystem"], "xfs");
+        assert_eq!(json["encryption"]["type"], "none");
+        assert_eq!(json["distroID"], "tunaos");
+        assert_eq!(json["hostname"], "tunaos");
+        assert_eq!(json["selinuxDisabled"], true);
+        assert!(json.get("image").is_some());
+        assert!(json.get("targetImgref").is_none());
+        assert!(json.get("bootloader").is_none());
+    }
+
+    #[test]
+    fn encryption_choices_filtering() {
+        let without_tpm = available_encryption_choices(false);
+        assert_eq!(without_tpm.len(), 2);
+        assert!(without_tpm.iter().all(|c| !c.tpm));
+        assert_eq!(without_tpm[0].id, "none");
+        assert_eq!(without_tpm[1].id, "luks-passphrase");
+
+        let with_tpm = available_encryption_choices(true);
+        assert_eq!(with_tpm.len(), 4);
+        assert_eq!(with_tpm[2].id, "tpm2-luks");
+        assert_eq!(with_tpm[3].id, "tpm2-luks-passphrase");
+    }
+}
+
