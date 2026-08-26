@@ -31,6 +31,30 @@
 
   <launchable type="desktop-id">org.tunaos.InstallerCosmic.desktop</launchable>
 
+  <!--
+    These PNGs are regenerated and committed by
+    .github/workflows/screenshots.yml on every push to main, straight from the
+    real UI, so the URLs below always show the current app. Do not hand-edit
+    the images; change the capture harness instead.
+  -->
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/tuna-os/tuna-installer-cosmic/main/docs/screenshots/01-welcome.png</image>
+      <caption>Starting the install wizard</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/tuna-os/tuna-installer-cosmic/main/docs/screenshots/02-disk.png</image>
+      <caption>Choosing which disk to install to</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/tuna-os/tuna-installer-cosmic/main/docs/screenshots/03-options.png</image>
+      <caption>Setting the computer name, filesystem and encryption</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/tuna-os/tuna-installer-cosmic/main/docs/screenshots/05-installing.png</image>
+      <caption>Writing the system image</caption>
+    </screenshot>
+  </screenshots>
   <content_rating type="oars-1.1" />
 
   <requires>
