@@ -726,5 +726,34 @@ mod tests {
         assert_eq!(with_tpm[2].id, "tpm2-luks");
         assert_eq!(with_tpm[3].id, "tpm2-luks-passphrase");
     }
+
+    #[test]
+    fn recipe_roundtrip_and_field_serialization() {
+        let mut recipe = Recipe::default();
+        recipe.disk = "/dev/nvme0n1".into();
+        recipe.filesystem = "btrfs".into();
+        recipe.btrfs_subvolumes = true;
+        recipe.target_imgref = "ghcr.io/tuna-os/albacore:stable".into();
+        recipe.bootloader = "systemd".into();
+        recipe.compose_fs_backend = true;
+        recipe.flatpaks = vec!["org.mozilla.firefox".into()];
+        recipe.additional_image_stores = vec!["/run/media/oci".into()];
+        recipe.encryption.enc_type = "luks-passphrase".into();
+        recipe.encryption.passphrase = "secret123".into();
+
+        let json_str = serde_json::to_string(&recipe).unwrap();
+        let restored: Recipe = serde_json::from_str(&json_str).unwrap();
+
+        assert_eq!(restored.disk, recipe.disk);
+        assert_eq!(restored.filesystem, recipe.filesystem);
+        assert_eq!(restored.btrfs_subvolumes, recipe.btrfs_subvolumes);
+        assert_eq!(restored.target_imgref, recipe.target_imgref);
+        assert_eq!(restored.bootloader, recipe.bootloader);
+        assert_eq!(restored.compose_fs_backend, recipe.compose_fs_backend);
+        assert_eq!(restored.flatpaks, recipe.flatpaks);
+        assert_eq!(restored.additional_image_stores, recipe.additional_image_stores);
+        assert_eq!(restored.encryption.enc_type, recipe.encryption.enc_type);
+        assert_eq!(restored.encryption.passphrase, recipe.encryption.passphrase);
+    }
 }
 
