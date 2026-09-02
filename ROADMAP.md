@@ -1,6 +1,6 @@
 # TunaOS COSMIC Installer — Roadmap
 
-**Last updated**: 2026-08-24 | **Maintainer**: tuna-os (hanthor)
+**Last updated**: 2026-08-30 | **Maintainer**: tuna-os (hanthor)
 
 ---
 
@@ -29,7 +29,7 @@ a native, polished install from first boot to desktop.
 
 | Priority | Item | Tracking | Status |
 |----------|------|----------|--------|
-| P0 | Install-recipe hardening — unpredictable recipe path, 0600 mode honored | #39/#41 | 🟡 Open |
+| P0 | Install-recipe hardening — unpredictable recipe path, 0600 mode honored | #39/#41 | ✅ Complete |
 | P0 | Unpin `cargo-sources` generation (flatpak-cargo-generator.py) | #40 | 🟡 Open |
 | P1 | Privileged install backend — only unpinned binary in the image | #38 | 🟡 Open |
 | P1 | Parity reporting — only frontend that emits no parity signal | #36 | 🟡 Open |
@@ -45,7 +45,8 @@ a native, polished install from first boot to desktop.
 
 | Goal | Owner | Tracking | Status |
 |------|-------|----------|--------|
-| Green install-recipe hardening (path + perms + unpinned gen) | hanthor | #39/#40/#41 | ⬜ Not started |
+| Install-recipe path and permission hardening | hanthor | #39/#41 | ✅ Complete |
+| Pin cargo-sources generator and Python dependencies | hanthor | #40 | 🟡 In progress |
 | Decide backend privilege boundary | hanthor | #38 | ⬜ Not started |
 
 ### Next Quarter (2026 Q4)
