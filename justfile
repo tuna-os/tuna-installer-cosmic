@@ -20,6 +20,19 @@ run:
 check:
     cargo build
 
+# Run the unit tests. Pure logic — no compositor, Vulkan ICD or Xvfb needed.
+test:
+    cargo test --locked
+
+# Executes the tests and emits lcov.info in one build. This is the command a
+# CI job should run and upload, so the 45%/70% targets in codecov.yml stop
+# being inert config -- nothing uploads a report today.
+#
+# Needs cargo-llvm-cov (`cargo install cargo-llvm-cov`) and the
+# llvm-tools-preview component (`rustup component add llvm-tools-preview`).
+coverage:
+    cargo llvm-cov --locked --lcov --output-path lcov.info
+
 # Verify the pixel gate still rejects a blank render. MUST fail (exit 1).
 capture-selftest:
     #!/usr/bin/env bash
