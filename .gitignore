@@ -4,3 +4,5 @@ build/
 Cargo.lock.orig
 variant-screenshots/
 __pycache__/
+# `just coverage` / the CI coverage step writes this next to the manifest.
+lcov.info

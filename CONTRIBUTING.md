@@ -40,7 +40,27 @@ cargo build
 cargo build --release
 ```
 
-### 2. Check Cargo Sources for Flatpak
+### 2. Unit Tests
+
+The backend logic — recipe defaults and JSON serialization, encryption-choice
+filtering, `os-release` parsing, offline and readiness detection — is covered by
+unit tests. They are pure logic and open no window, so they need no compositor,
+Vulkan ICD or Xvfb:
+
+```bash
+# Run the test suite
+just test
+# or
+cargo test --locked
+
+# Run it with coverage (writes lcov.info)
+just coverage
+```
+
+`just coverage` needs `cargo-llvm-cov` (`cargo install cargo-llvm-cov`) and the
+`llvm-tools-preview` component (`rustup component add llvm-tools-preview`).
+
+### 3. Check Cargo Sources for Flatpak
 
 If you mutate `Cargo.lock` or add/update dependencies, you **must** update `flatpak/cargo-sources.json`:
 
@@ -52,7 +72,7 @@ just cargo-sources
 just check-cargo-sources
 ```
 
-### 3. Screenshot Capture Tests
+### 4. Screenshot Capture Tests
 
 The repository renders and verifies screenshot assets for all wizard steps using headless Vulkan (lavapipe) and Xvfb:
 
@@ -70,5 +90,5 @@ just capture-selftest
 
 1. **Keep Changes Scoped**: Focus PRs on a single bug fix, feature, or documentation update.
 2. **DCO Sign-off Required**: All commits must include Developer Certificate of Origin sign-off (`git commit -s`).
-3. **CI Checks**: Ensure `cargo-sources` check, Flatpak build, and `screenshots` workflows pass in GitHub Actions.
+3. **CI Checks**: Ensure the `cargo-sources` check, Flatpak build, and `screenshots` workflows pass in GitHub Actions. None of them runs the test suite, so run `just test` yourself before opening the PR.
 4. **Do Not Merge Your Own PR**: PRs require review or automated merging.
