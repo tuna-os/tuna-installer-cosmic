@@ -2,6 +2,7 @@
 //! Contract: ../../INSTALLER-FRONTENDS.md §3 (privileges) and §4 (offline).
 
 use std::collections::HashSet;
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 use std::process::Command;
 
@@ -40,11 +41,52 @@ pub fn host_command(argv: &[&str]) -> Vec<String> {
 
 fn run_host(argv: &[&str]) -> Option<String> {
     let cmd = host_command(argv);
-    let out = Command::new(&cmd[0]).args(&cmd[1..]).output().ok()?;
+    let out = match Command::new(&cmd[0]).args(&cmd[1..]).output() {
+        Ok(out) => out,
+        Err(e) => {
+            tracing::warn!("run_host {argv:?} failed to spawn: {e}");
+            return None;
+        }
+    };
     if !out.status.success() {
+        tracing::warn!(
+            "run_host {argv:?} exited with {}: {}",
+            out.status,
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
         return None;
     }
     Some(String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// Best-effort persistence of the fisherman install log, 0600 like the
+/// recipe file, so a failed install can be diagnosed after the wizard
+/// closes. Never fails the install: logging the log is not worth failing
+/// the install over.
+pub fn persist_install_log(log: &str) {
+    use std::io::Write;
+
+    let home = std::env::var("HOME").unwrap_or_default();
+    let base = std::env::var("XDG_STATE_HOME").unwrap_or_else(|_| format!("{home}/.local/state"));
+    let dir = Path::new(&base).join("tuna-installer");
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        tracing::warn!("could not create {}: {e}", dir.display());
+        return;
+    }
+
+    let path = dir.join("install.log");
+    let write = || -> std::io::Result<()> {
+        let mut f = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&path)?;
+        f.write_all(log.as_bytes())
+    };
+    if let Err(e) = write() {
+        tracing::warn!("could not persist install log to {}: {e}", path.display());
+    }
 }
 
 /// Image ref of the booted live system, or None when not on live media.
