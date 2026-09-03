@@ -194,7 +194,7 @@ pub enum Message {
     PassphraseChanged(String),
     TogglePassphraseVisible,
     StartInstall,
-    InstallFinished(Result<i32, String>),
+    InstallFinished(Result<(i32, String), String>),
     Quit,
     /// Capture harness only — never reachable from the UI.
     Capture(capture::Message),
@@ -511,8 +511,9 @@ impl cosmic::Application for TunaInstaller {
                 self.page = Page::Done;
                 self.installing = false;
                 match result {
-                    Ok(code) => {
+                    Ok((code, log)) => {
                         self.install_ok = code == 0;
+                        self.install_log.push_str(&log);
                         self.install_log
                             .push_str(&format!("\n=== fisherman exited with code {code} ===\n"));
                     }
@@ -582,12 +583,21 @@ impl TunaInstaller {
         Ok(disks)
     }
 
-    async fn run_fisherman(recipe: Recipe) -> Result<i32, String> {
+    /// Runs fisherman and returns its exit code plus the combined
+    /// stdout+stderr it emitted (fisherman's structured step/substep/error/
+    /// recovery_key JSON-lines protocol — see internal/progress in the
+    /// fisherman repo). Previously this used `.output()` only to read the
+    /// exit code and threw the captured bytes away entirely, so a
+    /// successful OR failed install left `install_log` with nothing but an
+    /// exit code, even though the Done page tells the user "The install log
+    /// above has the details." Any recovery key fisherman emits for an
+    /// encrypted install was silently dropped the same way.
+    async fn run_fisherman(recipe: Recipe) -> Result<(i32, String), String> {
         let json = serde_json::to_string_pretty(&recipe).map_err(|e| e.to_string())?;
         // 0600 under XDG_RUNTIME_DIR — the recipe may hold a passphrase.
         let path = offline::write_recipe(&json).map_err(|e| e.to_string())?;
 
-        let output = tokio::task::spawn_blocking({
+        let result = tokio::task::spawn_blocking({
             let path = path.clone();
             move || {
                 // pkexec /app/bin/fisherman in Flatpak, sudo otherwise.
@@ -600,10 +610,26 @@ impl TunaInstaller {
             }
         })
         .await
-        .map_err(|e| format!("Task join error: {e}"))??;
+        .map_err(|e| format!("Task join error: {e}"))?;
 
         let _ = std::fs::remove_file(&path);
-        Ok(output.status.code().unwrap_or(-1))
+
+        let output = result.map_err(|e| {
+            tracing::error!("fisherman spawn failed: {e}");
+            e
+        })?;
+
+        let code = output.status.code().unwrap_or(-1);
+        let mut log = String::from_utf8_lossy(&output.stdout).into_owned();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if !stderr.is_empty() {
+            log.push_str(&stderr);
+        }
+        if code != 0 {
+            tracing::error!("fisherman exited with code {code}");
+        }
+        offline::persist_install_log(&log);
+        Ok((code, log))
     }
 }
 
