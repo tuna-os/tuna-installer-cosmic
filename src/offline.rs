@@ -191,7 +191,7 @@ mod tests {
         assert!(stores.contains(&b.display().to_string()), "{stores:?}");
         assert!(!stores.contains(&not_a_dir.display().to_string()), "{stores:?}");
         // The default store is not a directory in the test environment.
-        assert!(!stores.contains("/usr/share/tuna-installer/oci-store"), "{stores:?}");
+        assert!(!stores.iter().any(|s| s == "/usr/share/tuna-installer/oci-store"), "{stores:?}");
 
         let dup_value = format!("{}:{}", a.display(), a.display());
         unsafe { std::env::set_var("TUNA_OFFLINE_STORES", &dup_value) };
