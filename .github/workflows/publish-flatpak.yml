@@ -21,7 +21,15 @@ jobs:
       app-id: org.tunaos.InstallerCosmic
       manifest-path: flatpak/org.tunaos.InstallerCosmic.json
       repo-name: tuna-os/tuna-installer-cosmic
-      archs: '["x86_64"]'
+      # aarch64 joins x86_64 because the tunaOS live-ISO build installs this
+      # Flatpak from the tuna-os remote, and on arm64 there was nothing to
+      # install: `iso:cosmic (linux-arm64)` failed with
+      #   error: Nothing matches org.tunaos.InstallerCosmic in remote tuna-os
+      # while the amd64 leg of the same nightly passed (tunaOS run 33848074014,
+      # jobs 101041252677 vs 101041252606). The index writer is already
+      # per-architecture -- update-index.py replaces only the entry whose
+      # Architecture matches -- so both arches coexist in one index.
+      archs: '["x86_64", "aarch64"]'
       # Must track "runtime-version" in flatpak/org.tunaos.InstallerCosmic.json.
       # The tag only decides which runtime is preinstalled; the manifest
       # decides what is actually built against, so a mismatch silently costs
