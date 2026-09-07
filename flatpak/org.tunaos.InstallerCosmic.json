@@ -58,8 +58,8 @@
       "sources": [
         {
           "type": "git",
-          "url": "https://github.com/projectbluefin/fisherman.git",
-          "branch": "dev"
+          "url": "https://github.com/tuna-os/fisherman.git",
+          "commit": "027fa25c1d8bc01e2ac97d119cda9e8bb9c99ac7"
         }
       ]
     },
